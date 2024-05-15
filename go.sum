@@ -10,6 +10,8 @@ github.com/tailscale/hujson v0.0.0-20220506213045-af5ed07155e5 h1:erxeiTyq+nw4Cz
 github.com/tailscale/hujson v0.0.0-20220506213045-af5ed07155e5/go.mod h1:DFSS3NAGHthKo1gTlmEcSBiZrRJXi28rLNd/1udP1c8=
 github.com/tailscale/tailscale-client-go v1.17.1-0.20240515165555-26e0510d70f2 h1:AG4yIbGdVyk9CliwTC/nt/A8EJ0LD9Lr8BiUHVssGrE=
 github.com/tailscale/tailscale-client-go v1.17.1-0.20240515165555-26e0510d70f2/go.mod h1:Zxz9AWl4cNX8F+jE7iIeo6Me7dGPXNdCFIoVeovH6eI=
+github.com/tailscale/tailscale-client-go v1.17.1-0.20240515175515-5de5ead197a1 h1:zkMJ0cy93NV8PamPzmJMgw2AhJP6V4PwcYivH48G2Q0=
+github.com/tailscale/tailscale-client-go v1.17.1-0.20240515175515-5de5ead197a1/go.mod h1:Zxz9AWl4cNX8F+jE7iIeo6Me7dGPXNdCFIoVeovH6eI=
 go4.org/netipx v0.0.0-20231129151722-fdeea329fbba h1:0b9z3AuHCjxk0x/opv64kcgZLBseWJUpBw5I82+2U4M=
 go4.org/netipx v0.0.0-20231129151722-fdeea329fbba/go.mod h1:PLyyIXexvUFg3Owu6p/WfdlivPbZJsZdgWZlrGope/Y=
 golang.org/x/oauth2 v0.19.0 h1:9+E/EZBCbTLNrbN35fHv/a/d/mOBatymz1zbtQrXpIg=
