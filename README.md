@@ -14,4 +14,3 @@ Setting v4 address [100.67.178.27  ] to [nodeid:1234567890   / name:device123.ex
 Setting v4 address [100.71.77.104  ] to [nodeid:9876543210   / name:device987.example.ts.net]... done.
 Done.
 ```
-# tailscale-prefix-mover
