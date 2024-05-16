@@ -4,10 +4,8 @@ go 1.22.0
 
 toolchain go1.22.3
 
-// replace github.com/tailscale/tailscale-client-go => /Users/cameron/cc/tailscale/tailscale-client-go-set-device-ivp4-address // TODO: remove
-
 require (
-	github.com/tailscale/tailscale-client-go v1.17.1-0.20240515175515-5de5ead197a1
+	github.com/tailscale/tailscale-client-go v1.17.1-0.20240515175515-5de5ead197a1 // TODO: update once library is released
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
 )
 

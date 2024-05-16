@@ -7,8 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/rand"
-	randv2 "math/rand/v2" // TODO: necessary?
+	"math/rand/v2"
 	"net/netip"
 	"os"
 	"strings"
@@ -18,23 +17,32 @@ import (
 )
 
 var (
-	fromPrefixes    stringSlice
-	maxRetries      = flag.Int("max-retries", 10, "max times to retry if random new IP is already in use")
+	fromPrefixes    prefixSlice
+	toPrefixes      prefixSlice
+	maxRetries      = flag.Int("max-retries", 5, "max times to retry if random new IP is already in use")
 	continueOnError = flag.Bool("continue-on-error", false, "continue reassigning devices if an error for any device is encountered")
 	silent          = flag.Bool("silent", false, "do not output any messages")
+
+	cgnatPfx = netip.MustParsePrefix("100.64.0.0/10")
 )
 
-type stringSlice []string
+type prefixSlice []netip.Prefix
 
-func (i *stringSlice) String() string {
+func (i *prefixSlice) String() string {
 	return fmt.Sprintf("%s", *i)
 }
 
-func (i *stringSlice) Set(value string) error {
+func (i *prefixSlice) Set(value string) error {
 	values := strings.Split(value, ",")
 	for _, v := range values {
-		// TODO: parse with netip.MustParsePrefix(strings.TrimSpace(s)) here?
-		*i = append(*i, v)
+		parsedPrefix, err := netip.ParsePrefix(strings.TrimSpace(v))
+		if err != nil {
+			return err
+		}
+		if !cgnatPfx.Overlaps(parsedPrefix) {
+			return errors.New(fmt.Sprintf("prefix [%s] is not within [%s]", v, cgnatPfx))
+		}
+		*i = append(*i, parsedPrefix)
 	}
 	return nil
 }
@@ -45,24 +53,20 @@ func usage() {
 }
 
 func checkArgs() error {
-	// if *inParentFile == "" {
-	// 	return errors.New("missing argument -f - a parent file must be provided")
-	// }
-	// if *inChildDir == "" {
-	// 	return errors.New("missing argument -d - a directory of child files to process must be provided")
-	// }
-	// if len(allowedAclSections) == 0 {
-	// 	return errors.New("missing argument -allow - a list of acl sections to allow from children must be provided - e.g. -allow=acls,ssh")
-	// }
+	if fromPrefixes == nil || len(fromPrefixes) == 0 {
+		return errors.New("missing required flag -from-prefixes")
+	}
 	return nil
 }
 
 func main() {
-	flag.Var(&fromPrefixes, "prefixes", "prefixes to evacuate")
+	flag.Var(&fromPrefixes, "from-prefixes", fmt.Sprintf("prefixes to move devices FROM - must be within %s", cgnatPfx))
+	flag.Var(&toPrefixes, "to-prefixes", fmt.Sprintf("prefixes to move devices to - must be within %s", cgnatPfx))
 	flag.Parse()
-	argsErr := checkArgs()
-	if argsErr != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", argsErr)
+
+	err := checkArgs()
+	if err != nil {
+		logStderr("%s\n", err)
 		usage()
 		os.Exit(1)
 	}
@@ -75,35 +79,32 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	availablePrefixes, err := availablePrefixes(fromPrefixes)
-	if err != nil {
-		log.Fatalln(err)
+	availablePrefixes := toPrefixes
+	if availablePrefixes == nil {
+		availablePrefixes, err = calculateAvailablePrefixes(fromPrefixes)
+		if err != nil {
+			log.Fatalln(err)
+		}
 	}
 
-	logVerbose("Moving devices from %s to %s\n", fromPrefixes, availablePrefixes.Prefixes())
+	logVerbose("Moving devices from %s to %s\n", fromPrefixes, availablePrefixes)
 
-	ctx := context.Background() // TODO: probably not right?
-
+	ctx := context.Background()
 	devices, err := tailscaleClient.Devices(ctx)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
 	errCount := 0
-	for _, prefix := range fromPrefixes {
+	for _, fromPrefix := range fromPrefixes {
 		for _, device := range devices {
-			pfx, err := netip.ParsePrefix(prefix) // TODO: move ParsePrefix to arg parsing
-			if err != nil {
-				log.Fatalln(err)
-			}
-
 			v4Address, err := netip.ParseAddr(device.Addresses[0])
 			if err != nil {
 				log.Fatalln(err)
 			}
 
-			if pfx.Contains(v4Address) {
-				err = reassignDeviceAddress(ctx, tailscaleClient, device, availablePrefixes.Prefixes())
+			if fromPrefix.Contains(v4Address) {
+				err = reassignDeviceAddress(ctx, tailscaleClient, device, availablePrefixes)
 				if err != nil {
 					errCount++
 					logStderr("error setting address for device [nodeid:%-16s / name:%s] - [%s]\n", device.ID, device.Name, err)
@@ -128,7 +129,7 @@ func main() {
 
 func reassignDeviceAddress(ctx context.Context, tailscaleClient *tailscale.Client, device tailscale.Device, availablePrefixes []netip.Prefix) error {
 	for i := 0; i < *maxRetries; i++ {
-		prefix := availablePrefixes[rand.Intn(len(availablePrefixes))]
+		prefix := availablePrefixes[rand.IntN(len(availablePrefixes))]
 		newAddress := randV4(prefix)
 
 		logVerbose("Setting v4 address [%-15s] to [nodeid:%-18s / name:%s]... ", newAddress, device.ID, device.Name)
@@ -138,32 +139,33 @@ func reassignDeviceAddress(ctx context.Context, tailscaleClient *tailscale.Clien
 			continue
 		} else if err != nil {
 			return err
+		} else {
+			logVerbose("done.\n")
+			return nil
 		}
-		logVerbose("done.\n")
-		return nil
 	}
-	return errors.New(fmt.Sprintf("Unable to set new address after [%v] tries", *maxRetries)) // TODO: falls through to this too easily, need to move this
+	return errors.New(fmt.Sprintf("Unable to set new address after [%v] tries", *maxRetries))
 }
 
-func availablePrefixes(prefixes []string) (*netipx.IPSet, error) {
+func calculateAvailablePrefixes(prefixes []netip.Prefix) ([]netip.Prefix, error) {
 	var b netipx.IPSetBuilder
-	b.AddPrefix(netip.MustParsePrefix("100.64.0.0/10"))
+	b.AddPrefix(cgnatPfx)
 
 	for _, p := range prefixes {
-		b.RemovePrefix(netip.MustParsePrefix(p)) // TODO: handle unparsable prefixes?
+		b.RemovePrefix(p)
 	}
 
 	s, err := b.IPSet()
 	if err != nil {
 		return nil, err
 	}
-	return s, nil
+	return s.Prefixes(), nil
 }
 
 // TODO: simplify this?
 func randV4(maskedPfx netip.Prefix) netip.Addr {
 	bits := 32 - maskedPfx.Bits()
-	randBits := randv2.Uint32N(1 << uint(bits))
+	randBits := rand.Uint32N(1 << uint(bits))
 
 	ip4 := maskedPfx.Addr().As4()
 	pn := binary.BigEndian.Uint32(ip4[:])
