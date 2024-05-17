@@ -19,9 +19,9 @@ import (
 var (
 	fromPrefixes    prefixSlice
 	toPrefixes      prefixSlice
+	apply           = flag.Bool("apply", false, "make changes, otherwise will just print devices found within -from-prefixes")
 	maxRetries      = flag.Int("max-retries", 5, "max times to retry if random new IP is already in use")
 	continueOnError = flag.Bool("continue-on-error", false, "continue reassigning devices if an error for any device is encountered")
-	silent          = flag.Bool("silent", false, "do not output any messages")
 
 	cgnatPfx = netip.MustParsePrefix("100.64.0.0/10")
 )
@@ -66,7 +66,7 @@ func main() {
 
 	err := checkArgs()
 	if err != nil {
-		logStderr("%s\n", err)
+		fmt.Printf("%s\n", err)
 		usage()
 		os.Exit(1)
 	}
@@ -87,7 +87,7 @@ func main() {
 		}
 	}
 
-	logVerbose("Moving devices from %s to %s\n", fromPrefixes, availablePrefixes)
+	fmt.Printf("Moving devices from %s to %s\n", fromPrefixes, availablePrefixes)
 
 	ctx := context.Background()
 	devices, err := tailscaleClient.Devices(ctx)
@@ -107,40 +107,54 @@ func main() {
 				err = reassignDeviceAddress(ctx, tailscaleClient, device, availablePrefixes)
 				if err != nil {
 					errCount++
-					logStderr("error setting address for device [nodeid:%-16s / name:%s] - [%s]\n", device.ID, device.Name, err)
+					fmt.Printf("error setting address for device [nodeid:%-16s / name:%s] - [%s]\n", device.ID, device.Name, err)
 					if *continueOnError {
-						logVerbose(" Continuing...\n")
+						fmt.Printf(" Continuing...\n")
 						continue
 					} else {
-						logVerbose(" Stopping.\n")
+						fmt.Printf(" Stopping.\n")
 						break // unnecessary because log.Fatal will exit, but seems good to have here anyway
 					}
 				}
 			}
 		}
 	}
+
+	if !*apply {
+		fmt.Printf("Pass -apply to make changes.\n")
+	}
+
 	if errCount > 0 {
-		logVerbose(("Done.\n"))
+		fmt.Printf("Done.\n")
 		os.Exit(1)
 	} else {
-		logVerbose(("Done.\n"))
+		fmt.Printf("Done.\n")
 	}
 }
 
 func reassignDeviceAddress(ctx context.Context, tailscaleClient *tailscale.Client, device tailscale.Device, availablePrefixes []netip.Prefix) error {
 	for i := 0; i < *maxRetries; i++ {
 		prefix := availablePrefixes[rand.IntN(len(availablePrefixes))]
-		newAddress := randV4(prefix)
+		var newAddress string
+		if *apply {
+			newAddress = randV4(prefix).String()
+		} else {
+			newAddress = "v.x.y.z"
+		}
 
-		logVerbose("Setting v4 address [%-15s] to [nodeid:%-18s / name:%s]... ", newAddress, device.ID, device.Name)
-		err := tailscaleClient.SetDeviceIPv4Address(ctx, device.ID, newAddress.String())
+		fmt.Printf("Setting v4 address [%-15s] to [nodeid:%-18s / name:%s]... ", newAddress, device.ID, device.Name)
+		if !*apply {
+			fmt.Printf("done.\n")
+			return nil
+		}
+		err := tailscaleClient.SetDeviceIPv4Address(ctx, device.ID, newAddress)
 		if err != nil && err.Error() == "address already in use (500)" {
-			logVerbose("[%s] - retrying...\n", err)
+			fmt.Printf("[%s] - retrying...\n", err)
 			continue
 		} else if err != nil {
 			return err
 		} else {
-			logVerbose("done.\n")
+			fmt.Printf("done.\n")
 			return nil
 		}
 	}
@@ -162,7 +176,6 @@ func calculateAvailablePrefixes(prefixes []netip.Prefix) ([]netip.Prefix, error)
 	return s.Prefixes(), nil
 }
 
-// TODO: simplify this?
 func randV4(maskedPfx netip.Prefix) netip.Addr {
 	bits := 32 - maskedPfx.Bits()
 	randBits := rand.Uint32N(1 << uint(bits))
@@ -171,14 +184,4 @@ func randV4(maskedPfx netip.Prefix) netip.Addr {
 	pn := binary.BigEndian.Uint32(ip4[:])
 	binary.BigEndian.PutUint32(ip4[:], randBits|pn)
 	return netip.AddrFrom4(ip4)
-}
-
-func logVerbose(message string, a ...any) {
-	if !*silent {
-		logStderr(fmt.Sprintf(message, a...))
-	}
-}
-
-func logStderr(message string, a ...any) {
-	os.Stderr.WriteString(fmt.Sprintf(message, a...))
 }
