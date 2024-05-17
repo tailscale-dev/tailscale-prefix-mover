@@ -176,6 +176,7 @@ func calculateAvailablePrefixes(prefixes []netip.Prefix) ([]netip.Prefix, error)
 	return s.Prefixes(), nil
 }
 
+// credit to https://github.com/maisem
 func randV4(maskedPfx netip.Prefix) netip.Addr {
 	bits := 32 - maskedPfx.Bits()
 	randBits := rand.Uint32N(1 << uint(bits))
