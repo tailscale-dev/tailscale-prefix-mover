@@ -1,4 +1,4 @@
-module github.com/clstokes/tailscale-prefix-mover
+module github.com/tailscale-dev/tailscale-prefix-mover
 
 go 1.22.0
 
