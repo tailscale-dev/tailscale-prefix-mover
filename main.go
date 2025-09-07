@@ -12,8 +12,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/tailscale/tailscale-client-go/tailscale"
 	"go4.org/netipx"
+	"tailscale.com/client/tailscale/v2"
 )
 
 var (
@@ -40,7 +40,7 @@ func (i *prefixSlice) Set(value string) error {
 			return err
 		}
 		if !cgnatPfx.Overlaps(parsedPrefix) {
-			return errors.New(fmt.Sprintf("prefix [%s] is not within [%s]", v, cgnatPfx))
+			return fmt.Errorf("prefix [%s] is not within [%s]", v, cgnatPfx)
 		}
 		*i = append(*i, parsedPrefix)
 	}
@@ -53,7 +53,7 @@ func usage() {
 }
 
 func checkArgs() error {
-	if fromPrefixes == nil || len(fromPrefixes) == 0 {
+	if len(fromPrefixes) == 0 {
 		return errors.New("missing required flag -from-prefixes")
 	}
 	return nil
@@ -74,10 +74,7 @@ func main() {
 	apiKey := os.Getenv("TAILSCALE_API_KEY")
 	tailnet := os.Getenv("TAILSCALE_TAILNET")
 
-	tailscaleClient, err := tailscale.NewClient(apiKey, tailnet)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	tailscaleClient := &tailscale.Client{Tailnet: tailnet, APIKey: apiKey}
 
 	availablePrefixes := toPrefixes
 	if availablePrefixes == nil {
@@ -90,7 +87,7 @@ func main() {
 	fmt.Printf("Moving devices from %s to %s\n", fromPrefixes, availablePrefixes)
 
 	ctx := context.Background()
-	devices, err := tailscaleClient.Devices(ctx)
+	devices, err := tailscaleClient.Devices().List(ctx)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -112,8 +109,8 @@ func main() {
 						fmt.Printf(" Continuing...\n")
 						continue
 					} else {
-						fmt.Printf(" Stopping.\n")
-						break // unnecessary because log.Fatal will exit, but seems good to have here anyway
+						fmt.Printf(" Stopping...\n")
+						break
 					}
 				}
 			}
@@ -147,7 +144,7 @@ func reassignDeviceAddress(ctx context.Context, tailscaleClient *tailscale.Clien
 			fmt.Printf("done.\n")
 			return nil
 		}
-		err := tailscaleClient.SetDeviceIPv4Address(ctx, device.ID, newAddress)
+		err := tailscaleClient.Devices().SetIPv4Address(ctx, device.ID, newAddress)
 		if err != nil && err.Error() == "address already in use (500)" {
 			fmt.Printf("[%s] - retrying...\n", err)
 			continue
@@ -158,7 +155,7 @@ func reassignDeviceAddress(ctx context.Context, tailscaleClient *tailscale.Clien
 			return nil
 		}
 	}
-	return errors.New(fmt.Sprintf("Unable to set new address after [%v] tries", *maxRetries))
+	return fmt.Errorf("Unable to set new address after [%v] tries", *maxRetries)
 }
 
 func calculateAvailablePrefixes(prefixes []netip.Prefix) ([]netip.Prefix, error) {
