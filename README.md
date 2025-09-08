@@ -2,7 +2,7 @@
 
 [![status: experimental](https://img.shields.io/badge/status-experimental-blue)](https://tailscale.com/kb/1167/release-stages/#experimental)
 
-Provide a set of prefixes within `100.60.0.0/10` and this tool will find devices within those prefixes and reassign devices to other space within the CGNAT prefix.
+Provide a set of prefixes within `100.64.0.0/10` and this tool will find devices within those prefixes and reassign devices to other space within the CGNAT prefix.
 
 See [Visual Subnet Calculator](https://www.davidc.net/sites/default/subnets/subnets.html?network=100.64.0.0&mask=10&division=1.0) for an easy subnet calculator.
 
